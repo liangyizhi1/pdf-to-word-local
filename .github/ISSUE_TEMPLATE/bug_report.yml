@@ -1,0 +1,47 @@
+name: Bug report
+description: Report a reproducible conversion or application problem.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Do not upload confidential, private, or copyrighted PDFs without permission.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: pdf-type
+    attributes:
+      label: PDF type
+      options:
+        - Searchable text PDF
+        - Scanned or image-only PDF
+        - Mixed text and scanned pages
+        - Unknown
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Include expected behavior, actual behavior, and reproducible steps.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, Python version, selected backend, and report warnings.
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed confidential information from anything attached to this issue.
+          required: true
