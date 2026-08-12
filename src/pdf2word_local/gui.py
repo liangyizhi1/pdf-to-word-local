@@ -16,11 +16,12 @@ class ConverterApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("PDF to Word Local")
-        self.geometry("820x560")
-        self.minsize(680, 480)
+        self.geometry("820x600")
+        self.minsize(680, 520)
         self.files: list[Path] = []
         self.output_dir = tk.StringVar(value=str(Path.home() / "Documents"))
         self.overwrite = tk.BooleanVar(value=False)
+        self.formula_ocr = tk.BooleanVar(value=False)
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
         self._build_ui()
         self.after(100, self._read_events)
@@ -64,18 +65,27 @@ class ConverterApp(tk.Tk):
         ttk.Button(output, text="Browse", command=self._choose_output).grid(
             row=0, column=2, padx=(8, 0)
         )
+        options = ttk.Frame(root)
+        options.grid(row=5, column=0, sticky="w", pady=(14, 0))
+        ttk.Checkbutton(
+            options,
+            text="Recognize formula images (experimental)",
+            variable=self.formula_ocr,
+        ).pack(side="left")
+        ttk.Checkbutton(
+            options,
+            text="Replace existing files",
+            variable=self.overwrite,
+        ).pack(side="left", padx=(20, 0))
         footer = ttk.Frame(root)
-        footer.grid(row=5, column=0, sticky="ew", pady=(16, 0))
-        footer.columnconfigure(1, weight=1)
-        ttk.Checkbutton(footer, text="Replace existing files", variable=self.overwrite).grid(
-            row=0, column=0
-        )
+        footer.grid(row=6, column=0, sticky="ew", pady=(16, 0))
+        footer.columnconfigure(0, weight=1)
         self.progress = ttk.Progressbar(footer, mode="determinate", length=180)
-        self.progress.grid(row=0, column=1, padx=16, sticky="e")
+        self.progress.grid(row=0, column=0, padx=(0, 16), sticky="e")
         self.convert_button = ttk.Button(footer, text="Convert", command=self._start)
-        self.convert_button.grid(row=0, column=2)
+        self.convert_button.grid(row=0, column=1)
         self.status = ttk.Label(root, text="Ready")
-        self.status.grid(row=6, column=0, sticky="w", pady=(12, 0))
+        self.status.grid(row=7, column=0, sticky="w", pady=(12, 0))
 
     def _add_files(self) -> None:
         selected = filedialog.askopenfilenames(
@@ -120,11 +130,22 @@ class ConverterApp(tk.Tk):
         self.status.configure(text="Converting...")
         threading.Thread(
             target=self._convert_all,
-            args=(list(self.files), output_dir.resolve(), self.overwrite.get()),
+            args=(
+                list(self.files),
+                output_dir.resolve(),
+                self.overwrite.get(),
+                self.formula_ocr.get(),
+            ),
             daemon=True,
         ).start()
 
-    def _convert_all(self, files: list[Path], output_dir: Path, overwrite: bool) -> None:
+    def _convert_all(
+        self,
+        files: list[Path],
+        output_dir: Path,
+        overwrite: bool,
+        formula_ocr: bool,
+    ) -> None:
         completed = 0
         failed = 0
         for index, source in enumerate(files, start=1):
@@ -133,9 +154,16 @@ class ConverterApp(tk.Tk):
                 report = convert_pdf(
                     source,
                     output_dir / f"{source.stem}.docx",
-                    options=ConversionOptions(overwrite=overwrite),
+                    options=ConversionOptions(
+                        overwrite=overwrite,
+                        recognize_formulas=formula_ocr,
+                    ),
                 )
-                state = "Done" if not report.warnings else "Done with warning"
+                if report.formula_recognition and report.formula_recognition.recognized_count:
+                    count = report.formula_recognition.recognized_count
+                    state = f"Done ({count} formulae)"
+                else:
+                    state = "Done" if not report.warnings else "Done with warning"
                 completed += 1
                 self.events.put(("status", (source, state)))
             except ConversionError as exc:

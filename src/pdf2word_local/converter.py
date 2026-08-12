@@ -5,9 +5,12 @@ import os
 import sys
 import tempfile
 import time
+from contextlib import suppress
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
+
+from .formula import FormulaSummary, enrich_docx_with_formulae
 
 try:
     import pymupdf as fitz
@@ -34,6 +37,8 @@ class ConversionOptions:
     overwrite: bool = False
     write_report: bool = True
     backend: str = "auto"
+    recognize_formulas: bool = False
+    max_formulas_per_page: int = 20
 
 
 @dataclass(frozen=True)
@@ -58,6 +63,7 @@ class ConversionReport:
     duration_seconds: float
     inspection: PdfInspection
     warnings: list[str] = field(default_factory=list)
+    formula_recognition: FormulaSummary | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -126,8 +132,10 @@ def _select_backend(requested: str) -> str:
 def _warnings_for(inspection: PdfInspection) -> list[str]:
     if inspection.likely_scanned:
         return [
-            "All selected pages contain very little editable text. The PDF may be scanned; "
-            "review the Word result carefully."
+            (
+                "All selected pages contain very little editable text. The PDF may be scanned; "
+                "review the Word result carefully."
+            )
         ]
     if inspection.low_text_pages:
         pages = ", ".join(str(page) for page in inspection.low_text_pages[:12])
@@ -166,20 +174,14 @@ def _convert_with_word(source: Path, output: Path) -> PdfInspection:
         raise ConversionError(f"Microsoft Word could not convert this PDF: {exc}") from exc
     finally:
         if document is not None:
-            try:
+            with suppress(Exception):
                 document.Close(False)
-            except Exception:
-                pass
         if word is not None:
-            try:
+            with suppress(Exception):
                 word.Quit()
-            except Exception:
-                pass
 
 
-def _inspect_with_pymupdf(
-    source: Path, start_page: int, end_page: int | None
-) -> PdfInspection:
+def _inspect_with_pymupdf(source: Path, start_page: int, end_page: int | None) -> PdfInspection:
     if fitz is None:
         raise ConversionError("PyMuPDF is not installed.")
     try:
@@ -227,9 +229,7 @@ def _convert_with_pdf2docx(
     converter = None
     try:
         converter = Converter(str(source))
-        converter.convert(
-            str(output), start=settings.start_page - 1, end=settings.end_page
-        )
+        converter.convert(str(output), start=settings.start_page - 1, end=settings.end_page)
         return inspection
     finally:
         if converter is not None:
@@ -243,6 +243,8 @@ def convert_pdf(
     options: ConversionOptions | None = None,
 ) -> ConversionReport:
     settings = options or ConversionOptions()
+    if not 1 <= settings.max_formulas_per_page <= 100:
+        raise ConversionError("max_formulas_per_page must be between 1 and 100.")
     source_path = Path(source).expanduser().resolve()
     output_path = (
         Path(output).expanduser().resolve()
@@ -264,6 +266,7 @@ def convert_pdf(
     os.close(handle)
     temporary_path = Path(temporary_name)
     temporary_path.unlink(missing_ok=True)
+    formula_summary: FormulaSummary | None = None
     try:
         if backend == "word":
             inspection = _convert_with_word(source_path, temporary_path)
@@ -271,6 +274,20 @@ def convert_pdf(
             inspection = _convert_with_pdf2docx(source_path, temporary_path, settings)
         if not temporary_path.is_file() or temporary_path.stat().st_size == 0:
             raise ConversionError("The converter did not produce a valid Word file.")
+        if settings.recognize_formulas:
+            try:
+                formula_summary = enrich_docx_with_formulae(
+                    source_path,
+                    temporary_path,
+                    start_page=settings.start_page,
+                    end_page=settings.end_page,
+                    max_per_page=settings.max_formulas_per_page,
+                )
+            except Exception as exc:  # noqa: BLE001 - optional enrichment boundary.
+                formula_summary = FormulaSummary(
+                    status="failed",
+                    warnings=[f"Formula recognition failed: {exc}"],
+                )
         os.replace(temporary_path, output_path)
     except Exception as exc:
         temporary_path.unlink(missing_ok=True)
@@ -278,6 +295,8 @@ def convert_pdf(
             raise
         raise ConversionError(f"Conversion failed: {exc}") from exc
     warnings = _warnings_for(inspection)
+    if formula_summary is not None:
+        warnings.extend(formula_summary.warnings)
     report = ConversionReport(
         source=str(source_path),
         output=str(output_path),
@@ -286,6 +305,7 @@ def convert_pdf(
         duration_seconds=round(time.perf_counter() - started, 3),
         inspection=inspection,
         warnings=warnings,
+        formula_recognition=formula_summary,
     )
     if settings.write_report:
         report.write_json()

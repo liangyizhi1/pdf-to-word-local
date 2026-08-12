@@ -24,6 +24,18 @@ def build_parser() -> argparse.ArgumentParser:
         default="auto",
         help="Conversion engine (default: auto)",
     )
+    parser.add_argument(
+        "--formula-ocr",
+        action="store_true",
+        help="Recognize image-based formulae and add an experimental Word appendix",
+    )
+    parser.add_argument(
+        "--max-formulae-per-page",
+        type=int,
+        default=20,
+        metavar="N",
+        help="Maximum image regions sent to formula OCR per page (default: 20)",
+    )
     return parser
 
 
@@ -45,9 +57,17 @@ def main(argv: list[str] | None = None) -> int:
                     overwrite=args.overwrite,
                     write_report=not args.no_report,
                     backend=args.backend,
+                    recognize_formulas=args.formula_ocr,
+                    max_formulas_per_page=args.max_formulae_per_page,
                 ),
             )
             print(f"[OK] {report.output} ({report.backend})")
+            if report.formula_recognition is not None:
+                formulae = report.formula_recognition
+                print(
+                    f"[FORMULAE] {formulae.recognized_count}/{formulae.candidate_count} recognized; "
+                    f"{formulae.native_equation_count} native Word equations"
+                )
             for warning in report.warnings:
                 print(f"[WARNING] {warning}")
         except ConversionError as exc:
