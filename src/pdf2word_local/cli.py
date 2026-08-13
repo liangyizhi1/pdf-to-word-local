@@ -36,6 +36,25 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="Maximum image regions sent to formula OCR per page (default: 20)",
     )
+    parser.add_argument(
+        "--split-images",
+        action="store_true",
+        help="Extract PDF images and split composite images along whitespace bands",
+    )
+    parser.add_argument(
+        "--max-images-per-page",
+        type=int,
+        default=50,
+        metavar="N",
+        help="Maximum PDF image regions exported per page (default: 50)",
+    )
+    parser.add_argument(
+        "--max-pieces-per-image",
+        type=int,
+        default=16,
+        metavar="N",
+        help="Maximum generated pieces for one PDF image (default: 16)",
+    )
     return parser
 
 
@@ -59,6 +78,9 @@ def main(argv: list[str] | None = None) -> int:
                     backend=args.backend,
                     recognize_formulas=args.formula_ocr,
                     max_formulas_per_page=args.max_formulae_per_page,
+                    segment_images=args.split_images,
+                    max_images_per_page=args.max_images_per_page,
+                    max_pieces_per_image=args.max_pieces_per_image,
                 ),
             )
             print(f"[OK] {report.output} ({report.backend})")
@@ -67,6 +89,12 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     f"[FORMULAE] {formulae.recognized_count}/{formulae.candidate_count} recognized; "
                     f"{formulae.native_equation_count} native Word equations"
+                )
+            if report.image_segmentation is not None:
+                images = report.image_segmentation
+                print(
+                    f"[IMAGES] {images.image_count} extracted; "
+                    f"{images.split_image_count} split into {images.piece_count} pieces"
                 )
             for warning in report.warnings:
                 print(f"[WARNING] {warning}")

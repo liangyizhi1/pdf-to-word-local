@@ -16,12 +16,13 @@ class ConverterApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("PDF to Word Local")
-        self.geometry("820x600")
-        self.minsize(680, 520)
+        self.geometry("820x630")
+        self.minsize(680, 550)
         self.files: list[Path] = []
         self.output_dir = tk.StringVar(value=str(Path.home() / "Documents"))
         self.overwrite = tk.BooleanVar(value=False)
         self.formula_ocr = tk.BooleanVar(value=False)
+        self.split_images = tk.BooleanVar(value=False)
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
         self._build_ui()
         self.after(100, self._read_events)
@@ -72,6 +73,11 @@ class ConverterApp(tk.Tk):
             text="Recognize formula images (experimental)",
             variable=self.formula_ocr,
         ).pack(side="left")
+        ttk.Checkbutton(
+            options,
+            text="Extract and split PDF images",
+            variable=self.split_images,
+        ).pack(side="left", padx=(20, 0))
         ttk.Checkbutton(
             options,
             text="Replace existing files",
@@ -135,6 +141,7 @@ class ConverterApp(tk.Tk):
                 output_dir.resolve(),
                 self.overwrite.get(),
                 self.formula_ocr.get(),
+                self.split_images.get(),
             ),
             daemon=True,
         ).start()
@@ -145,6 +152,7 @@ class ConverterApp(tk.Tk):
         output_dir: Path,
         overwrite: bool,
         formula_ocr: bool,
+        split_images: bool,
     ) -> None:
         completed = 0
         failed = 0
@@ -157,11 +165,16 @@ class ConverterApp(tk.Tk):
                     options=ConversionOptions(
                         overwrite=overwrite,
                         recognize_formulas=formula_ocr,
+                        segment_images=split_images,
                     ),
                 )
+                details: list[str] = []
                 if report.formula_recognition and report.formula_recognition.recognized_count:
-                    count = report.formula_recognition.recognized_count
-                    state = f"Done ({count} formulae)"
+                    details.append(f"{report.formula_recognition.recognized_count} formulae")
+                if report.image_segmentation and report.image_segmentation.piece_count:
+                    details.append(f"{report.image_segmentation.piece_count} image pieces")
+                if details:
+                    state = f"Done ({', '.join(details)})"
                 else:
                     state = "Done" if not report.warnings else "Done with warning"
                 completed += 1

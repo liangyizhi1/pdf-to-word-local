@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .formula import FormulaSummary, enrich_docx_with_formulae
+from .images import ImageSegmentationSummary, segment_pdf_images
 
 try:
     import pymupdf as fitz
@@ -39,6 +40,9 @@ class ConversionOptions:
     backend: str = "auto"
     recognize_formulas: bool = False
     max_formulas_per_page: int = 20
+    segment_images: bool = False
+    max_images_per_page: int = 50
+    max_pieces_per_image: int = 16
 
 
 @dataclass(frozen=True)
@@ -64,6 +68,7 @@ class ConversionReport:
     inspection: PdfInspection
     warnings: list[str] = field(default_factory=list)
     formula_recognition: FormulaSummary | None = None
+    image_segmentation: ImageSegmentationSummary | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -245,6 +250,10 @@ def convert_pdf(
     settings = options or ConversionOptions()
     if not 1 <= settings.max_formulas_per_page <= 100:
         raise ConversionError("max_formulas_per_page must be between 1 and 100.")
+    if not 1 <= settings.max_images_per_page <= 200:
+        raise ConversionError("max_images_per_page must be between 1 and 200.")
+    if not 1 <= settings.max_pieces_per_image <= 64:
+        raise ConversionError("max_pieces_per_image must be between 1 and 64.")
     source_path = Path(source).expanduser().resolve()
     output_path = (
         Path(output).expanduser().resolve()
@@ -267,6 +276,7 @@ def convert_pdf(
     temporary_path = Path(temporary_name)
     temporary_path.unlink(missing_ok=True)
     formula_summary: FormulaSummary | None = None
+    image_summary: ImageSegmentationSummary | None = None
     try:
         if backend == "word":
             inspection = _convert_with_word(source_path, temporary_path)
@@ -288,6 +298,24 @@ def convert_pdf(
                     status="failed",
                     warnings=[f"Formula recognition failed: {exc}"],
                 )
+        if settings.segment_images:
+            image_directory = output_path.with_name(f"{output_path.stem}_images")
+            try:
+                image_summary = segment_pdf_images(
+                    source_path,
+                    image_directory,
+                    start_page=settings.start_page,
+                    end_page=settings.end_page,
+                    max_per_page=settings.max_images_per_page,
+                    max_pieces_per_image=settings.max_pieces_per_image,
+                    overwrite=settings.overwrite,
+                )
+            except Exception as exc:  # noqa: BLE001 - optional enrichment boundary.
+                image_summary = ImageSegmentationSummary(
+                    status="failed",
+                    output_directory=str(image_directory),
+                    warnings=[f"Image segmentation failed: {exc}"],
+                )
         os.replace(temporary_path, output_path)
     except Exception as exc:
         temporary_path.unlink(missing_ok=True)
@@ -297,6 +325,8 @@ def convert_pdf(
     warnings = _warnings_for(inspection)
     if formula_summary is not None:
         warnings.extend(formula_summary.warnings)
+    if image_summary is not None:
+        warnings.extend(image_summary.warnings)
     report = ConversionReport(
         source=str(source_path),
         output=str(output_path),
@@ -306,6 +336,7 @@ def convert_pdf(
         inspection=inspection,
         warnings=warnings,
         formula_recognition=formula_summary,
+        image_segmentation=image_summary,
     )
     if settings.write_report:
         report.write_json()

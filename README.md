@@ -1,15 +1,16 @@
 # PDF to Word Local
 
-A private, offline PDF-to-Word converter with a desktop interface, batch conversion, optional formula OCR, and machine-readable quality reports.
+A private, offline PDF-to-Word converter with a desktop interface, batch conversion, optional formula OCR, image extraction and splitting, and machine-readable quality reports.
 
-> Status: early alpha. Version 0.2 works best with searchable PDFs. Formula OCR is experimental and currently targets formulae embedded as PDF images.
+> Status: early alpha. Version 0.3 works best with searchable PDFs. Formula OCR and image splitting are optional, review-oriented features.
 
 ## Why this project
 
 - **Private by default:** files stay on your computer.
 - **Simple desktop workflow:** select PDFs, choose a folder, and convert.
 - **Optional formula OCR:** image-based equations can be recognized as LaTeX and appended to Word for verification.
-- **Honest quality signals:** missing text and uncertain formulae are reported instead of silently treated as successful.
+- **Optional image splitting:** embedded composite images can be exported as separate PNG pieces when clear whitespace separators exist.
+- **Honest quality signals:** missing text and uncertain results are reported instead of silently treated as successful.
 - **Recoverable writes:** completed files replace temporary output only after conversion succeeds.
 
 ## Windows quick start
@@ -38,6 +39,21 @@ Current formula scope:
 - does not yet recognize equations drawn with PDF fonts or vector paths;
 - appends a review section rather than claiming reliable original-position replacement.
 
+## Image extraction and splitting
+
+Enable **Extract and split PDF images** in the desktop application, or pass `--split-images` on the command line. Extracted PNG files are written to `<document-name>_images` beside the DOCX. This export does not change the images or layout already placed in the Word file.
+
+The splitter looks for clear horizontal and vertical whitespace bands inside embedded raster images. It works well for simple multi-panel figures, contact sheets, and grid-like composites. If no reliable separator exists, it preserves the complete image instead of making an arbitrary crop. Tiny image regions and likely full-page scans are skipped.
+
+The `.conversion.json` report records each source page, PDF bounding box, pixel crop bounding box, output dimensions, split axis, status, warnings, and filenames. Output names such as `page-0001_image-001_piece-01.png` keep every piece traceable to its source.
+
+Important limits:
+
+- touching or overlapping panels may not split;
+- panels on a shared nonuniform background may not split;
+- vector artwork is not rasterized into separate objects;
+- an existing nonempty image output folder is protected unless overwrite is enabled.
+
 ## Command line
 
 ```powershell
@@ -45,10 +61,12 @@ python -m pip install --no-build-isolation -e ".[portable]"
 pdf2word document.pdf
 pdf2word document.pdf --formula-ocr
 pdf2word document.pdf --formula-ocr --max-formulae-per-page 12
+pdf2word document.pdf --split-images
+pdf2word document.pdf --split-images --max-images-per-page 50 --max-pieces-per-image 16
 pdf2word a.pdf b.pdf --output-dir converted
 ```
 
-Each conversion writes a DOCX and a `.conversion.json` report containing the engine, page count, editable-text volume, image count, formula results, warnings, and duration.
+Each conversion writes a DOCX and a `.conversion.json` report containing the engine, page count, editable-text volume, image count, formula results, image segmentation results, warnings, and duration.
 
 ## Engines
 
@@ -61,16 +79,17 @@ Each conversion writes a DOCX and a `.conversion.json` report containing the eng
 - General page OCR is not bundled; scanned prose may produce incomplete editable text.
 - Pixel-perfect reconstruction is not guaranteed.
 - Complex tables, vector formulae, and unusual fonts may need manual correction.
-- OCR-generated equations must be checked before scientific or production use.
+- OCR-generated equations and segmented images must be checked before scientific or production use.
 
 ## Development
 
 ```powershell
-set PYTHONPATH=src
-python -m unittest discover -s tests
+$env:PYTHONPATH = "src"
+python -m unittest discover -s tests -v
 python -m compileall -q src tests
+python -m ruff check .
 ```
 
 Roadmap: vector/text formula detection, local Chinese/English page OCR, table diagnostics, visual regression samples, signed Windows builds, and a Chinese desktop interface.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. MIT licensed.
+See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. MIT licensed. Chinese documentation: [README.zh-CN.md](README.zh-CN.md).

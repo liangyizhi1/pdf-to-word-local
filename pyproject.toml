@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pdf-to-word-local"
-version = "0.2.0"
-description = "Private, offline PDF to Word conversion with formula OCR and quality reports."
+version = "0.3.0"
+description = "Private, offline PDF to Word conversion with formula OCR, image splitting, and quality reports."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "PDF to Word Local contributors" }]
-keywords = ["pdf", "docx", "word", "offline", "formula-ocr", "conversion"]
+keywords = ["pdf", "docx", "word", "offline", "formula-ocr", "image-segmentation", "conversion"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "License :: OSI Approved :: MIT License",
@@ -21,13 +21,21 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-portable = ["pdf2docx>=0.5.8,<0.6", "PyMuPDF>=1.23,<2"]
+portable = [
+  "pdf2docx>=0.5.8,<0.6",
+  "PyMuPDF>=1.23,<2",
+  "Pillow>=10,<12",
+]
 formula = [
   "rapid-latex-ocr>=0.0.2,<1",
   "latex2mathml>=3.77,<4",
   "python-docx>=1.1,<2",
   "Pillow>=10,<12",
   "lxml>=5,<7",
+]
+images = [
+  "PyMuPDF>=1.23,<2",
+  "Pillow>=10,<12",
 ]
 dev = [
   "ruff>=0.8,<1",
