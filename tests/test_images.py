@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import io
 import json
 import tempfile
@@ -11,6 +12,9 @@ from pdf2word_local.images import (
     segment_pdf_images,
     split_image,
 )
+
+HAS_PILLOW = importlib.util.find_spec("PIL") is not None
+HAS_INTEGRATION_DEPS = HAS_PILLOW and importlib.util.find_spec("pymupdf") is not None
 
 
 def _composite_image(columns: int, rows: int, *, dark_background: bool = False):
@@ -35,7 +39,7 @@ def _composite_image(columns: int, rows: int, *, dark_background: bool = False):
     return image
 
 
-class ImageSegmentationUnitTests(unittest.TestCase):
+class ImageSegmentationFilterTests(unittest.TestCase):
     def test_image_filter_skips_tiny_and_page_scan_blocks(self) -> None:
         tiny = {"type": 1, "bbox": (10, 10, 20, 20), "image": b"image"}
         scan = {"type": 1, "bbox": (0, 0, 600, 800), "image": b"image"}
@@ -44,6 +48,9 @@ class ImageSegmentationUnitTests(unittest.TestCase):
         self.assertFalse(is_exportable_image_block(scan, page_width=600, page_height=800))
         self.assertTrue(is_exportable_image_block(figure, page_width=600, page_height=800))
 
+
+@unittest.skipUnless(HAS_PILLOW, "image segmentation requires Pillow")
+class ImageSegmentationUnitTests(unittest.TestCase):
     def test_vertical_whitespace_splits_two_panels(self) -> None:
         pieces = split_image(_composite_image(2, 1))
         self.assertEqual(len(pieces), 2)
@@ -69,6 +76,7 @@ class ImageSegmentationUnitTests(unittest.TestCase):
         self.assertEqual(pieces[0][0], (0, 0, image.width, image.height))
 
 
+@unittest.skipUnless(HAS_INTEGRATION_DEPS, "image integration dependencies are unavailable")
 class ImageSegmentationIntegrationTests(unittest.TestCase):
     def test_pdf_composite_image_exports_four_pieces(self) -> None:
         import pymupdf
